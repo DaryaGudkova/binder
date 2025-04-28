@@ -1,0 +1,267 @@
+<!-- ellipse.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Interactive Ellipse Visualization</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+        .slider-container {
+            width: 400px;
+            margin-bottom: 20px;
+        }
+        canvas {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        label {
+            display: inline-block;
+            width: 100px;
+            text-align: right;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Ellipse Sector Visualization</h1>
+        <div class="slider-container">
+            <label for="thresholdSlider">Threshold (b):</label>
+            <input type="range" id="thresholdSlider" min="-1.0" max="1.0" step="0.1" value="0">
+            <span id="sliderValue">0.0</span>
+        </div>
+        <canvas id="ellipseCanvas" width="600" height="600"></canvas>
+    </div>
+
+    <script>
+        // Configuration parameters
+        const config = {
+            add: 0,
+            angleDeg: 60,
+            sliderMin: -1.0,
+            sliderMax: 1.0,
+            sliderStep: 0.1,
+            tpColor: [0, 125, 187],
+            fnColor: [255, 170, 79],
+            fpColor: [158, 219, 235],
+            tnColor: [235, 0, 0],
+            a: 1.3,        // ellipse width
+            bEllipse: 0.8, // ellipse height
+            canvasSize: 600,
+            plotRange: 1.5
+        };
+
+        // Get DOM elements
+        const canvas = document.getElementById('ellipseCanvas');
+        const ctx = canvas.getContext('2d');
+        const slider = document.getElementById('thresholdSlider');
+        const sliderValue = document.getElementById('sliderValue');
+
+        // Set slider properties from config
+        slider.min = config.sliderMin;
+        slider.max = config.sliderMax;
+        slider.step = config.sliderStep;
+        slider.value = config.add;
+        sliderValue.textContent = config.add;
+
+        // Scale factor from data coordinates to pixels
+        const scale = config.canvasSize / (2 * config.plotRange);
+
+        // Convert data coordinates to canvas pixels
+        function toPixelX(x) {
+            return (x + config.plotRange) * scale;
+        }
+
+        function toPixelY(y) {
+            return config.canvasSize - (y + config.plotRange) * scale;
+        }
+
+        // Calculate sector centers
+        function calculateSectorCenters(add) {
+            const theta = config.angleDeg * Math.PI / 180;
+            const slope = Math.tan(theta);
+            const centers = { tp: [0, 0], fn: [0, 0], fp: [0, 0], tn: [0, 0] };
+            const step = 0.01;
+            let tpPoints = 0, fnPoints = 0, fpPoints = 0, tnPoints = 0;
+            
+            // Sample points within ellipse to find sector centers
+            for (let x = -config.a; x <= config.a; x += step) {
+                for (let y = -config.bEllipse; y <= config.bEllipse; y += step) {
+                    if ((x*x)/(config.a*config.a) + (y*y)/(config.bEllipse*config.bEllipse) <= 1) {
+                        if (y < 0 && y > slope * x + add) {
+                            // FP sector
+                            centers.fp[0] += x;
+                            centers.fp[1] += y;
+                            fpPoints++;
+                        } else if (y > 0 && y > slope * x + add) {
+                            // TP sector
+                            centers.tp[0] += x;
+                            centers.tp[1] += y;
+                            tpPoints++;
+                        } else if (y < 0 && y < slope * x + add) {
+                            // TN sector
+                            centers.tn[0] += x;
+                            centers.tn[1] += y;
+                            tnPoints++;
+                        } else if (y > 0 && y < slope * x + add) {
+                            // FN sector
+                            centers.fn[0] += x;
+                            centers.fn[1] += y;
+                            fnPoints++;
+                        }
+                    }
+                }
+            }
+            
+            // Calculate average positions
+            if (tpPoints > 0) {
+                centers.tp[0] /= tpPoints;
+                centers.tp[1] /= tpPoints;
+            }
+            if (fnPoints > 0) {
+                centers.fn[0] /= fnPoints;
+                centers.fn[1] /= fnPoints;
+            }
+            if (fpPoints > 0) {
+                centers.fp[0] /= fpPoints;
+                centers.fp[1] /= fpPoints;
+            }
+            if (tnPoints > 0) {
+                centers.tn[0] /= tnPoints;
+                centers.tn[1] /= tnPoints;
+            }
+            
+            return centers;
+        }
+
+        // Draw the ellipse visualization
+        function plotEllipse(add) {
+            // Clear canvas
+            ctx.clearRect(0, 0, config.canvasSize, config.canvasSize);
+            
+            // Calculate parameters
+            const theta = config.angleDeg * Math.PI / 180;
+            const slope = Math.tan(theta);
+            
+            // Calculate sector centers
+            const centers = calculateSectorCenters(add);
+            
+            // Draw ellipse outline
+            ctx.beginPath();
+            ctx.ellipse(
+                toPixelX(0), 
+                toPixelY(0), 
+                config.a * scale, 
+                config.bEllipse * scale, 
+                0, 0, 2 * Math.PI
+            );
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            // Create an off-screen canvas for pixel manipulation
+            const pixelCanvas = document.createElement('canvas');
+            pixelCanvas.width = config.canvasSize;
+            pixelCanvas.height = config.canvasSize;
+            const pixelCtx = pixelCanvas.getContext('2d');
+            const imageData = pixelCtx.createImageData(config.canvasSize, config.canvasSize);
+            const data = imageData.data;
+            
+            // Sample points and color sectors
+            const step = 2 * config.plotRange / config.canvasSize;
+            for (let i = 0; i < config.canvasSize; i++) {
+                for (let j = 0; j < config.canvasSize; j++) {
+                    // Convert pixel to data coordinates
+                    const x = (i / scale) - config.plotRange;
+                    const y = config.plotRange - (j / scale);
+                    
+                    // Check if point is inside ellipse
+                    const inEllipse = (x*x)/(config.a*config.a) + (y*y)/(config.bEllipse*config.bEllipse) <= 1;
+                    
+                    if (inEllipse) {
+                        const idx = (j * config.canvasSize + i) * 4;
+                        
+                        // Determine sector
+                        if (y < 0 && y > slope * x + add) {
+                            // FP sector
+                            data[idx] = config.fpColor[0];
+                            data[idx+1] = config.fpColor[1];
+                            data[idx+2] = config.fpColor[2];
+                        } else if (y > 0 && y > slope * x + add) {
+                            // TP sector
+                            data[idx] = config.tpColor[0];
+                            data[idx+1] = config.tpColor[1];
+                            data[idx+2] = config.tpColor[2];
+                        } else if (y < 0 && y < slope * x + add) {
+                            // TN sector
+                            data[idx] = config.tnColor[0];
+                            data[idx+1] = config.tnColor[1];
+                            data[idx+2] = config.tnColor[2];
+                        } else if (y > 0 && y < slope * x + add) {
+                            // FN sector
+                            data[idx] = config.fnColor[0];
+                            data[idx+1] = config.fnColor[1];
+                            data[idx+2] = config.fnColor[2];
+                        }
+                        data[idx+3] = 255; // Alpha channel
+                    }
+                }
+            }
+            
+            // Put the pixel data back to the off-screen canvas
+            pixelCtx.putImageData(imageData, 0, 0);
+            
+            // Draw the off-screen canvas to the main canvas
+            ctx.drawImage(pixelCanvas, 0, 0);
+            
+            // Draw the dividing line
+            ctx.beginPath();
+            const x1 = -config.plotRange;
+            const y1 = slope * x1 + add;
+            const x2 = config.plotRange;
+            const y2 = slope * x2 + add;
+            ctx.moveTo(toPixelX(x1), toPixelY(y1));
+            ctx.lineTo(toPixelX(x2), toPixelY(y2));
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            
+            // Add labels at calculated centers
+            addLabel("TP", centers.tp, config.tpColor);
+            addLabel("FN", centers.fn, config.fnColor);
+            addLabel("FP", centers.fp, config.fpColor);
+            addLabel("TN", centers.tn, config.tnColor);
+        }
+        
+        // Add label at specific position
+        function addLabel(text, center, color) {
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 20px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, toPixelX(center[0]), toPixelY(center[1]));
+        }
+        
+        // Event listener for slider
+        slider.addEventListener('input', function() {
+            const value = parseFloat(this.value);
+            sliderValue.textContent = value.toFixed(1);
+            plotEllipse(value);
+        });
+        
+        // Initial plot
+        plotEllipse(config.add);
+    </script>
+</body>
+</html>
